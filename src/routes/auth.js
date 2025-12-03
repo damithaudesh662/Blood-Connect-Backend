@@ -11,19 +11,61 @@ const router = express.Router();
 router.post("/register", async (req, res) => {
   try {
     console.log(req.body);
-    const { email, password, role, name, bloodGroup } = req.body;
+    const { email, password, role, name, bloodGroup, location } = req.body;
 
     if (!email || !password || !role || !name) {
       return res.status(400).json({ error: "Missing fields" });
     }
 
+    // Expect location as [lat, lng]
+    let locationLat = null;
+    let locationLng = null;
+
+    if (Array.isArray(location) && location.length === 2) {
+      const [lat, lng] = location;
+      if (
+        typeof lat === "number" &&
+        typeof lng === "number" &&
+        Number.isFinite(lat) &&
+        Number.isFinite(lng)
+      ) {
+        locationLat = lat;
+        locationLng = lng;
+      } else {
+        return res
+          .status(400)
+          .json({ error: "Location must be numeric [lat, lng]" });
+      }
+    } else {
+      return res
+        .status(400)
+        .json({ error: "Location is required as [lat, lng]" });
+    }
+
     const hash = await bcrypt.hash(password, 10);
 
+    console.log(locationLat, locationLng);
+
     const result = await pool.query(
-      `INSERT INTO users (email, password_hash, role, name, blood_group)
-       VALUES ($1,$2,$3,$4,$5)
-       RETURNING id, email, role, name, blood_group`,
-      [email, hash, role, name, bloodGroup || null]
+      `INSERT INTO users (
+         email,
+         password_hash,
+         role,
+         name,
+         blood_group,
+         location_lat,
+         location_lng
+       )
+       VALUES ($1,$2,$3,$4,$5,$6,$7)
+       RETURNING
+         id,
+         email,
+         role,
+         name,
+         blood_group,
+         location_lat AS "locationLat",
+         location_lng AS "locationLng"`,
+      [email, hash, role, name, bloodGroup || null, locationLat, locationLng]
     );
 
     const user = result.rows[0];
