@@ -258,10 +258,47 @@ router.post('/requests/:id/respond', async (req, res) => {
   }
 });
 
+// router.get('/responses', async (req, res) => {
+//   try {
+//     const donorResult = await pool.query(
+//       `SELECT location_lat, location_lng
+//        FROM users
+//        WHERE id = $1`,
+//       [req.user.id]
+//     );
+//     const donor = donorResult.rows[0];
+
+//     const result = await pool.query(
+//       `
+//       SELECT
+//         br.id,
+//         u.name AS "hospitalName",
+//         br.blood_type AS "bloodType",
+//         br.persons,
+//         br.status,
+//         u.location_lat AS "hospitalLat",
+//         u.location_lng AS "hospitalLng",
+//         to_char(br.created_at, 'DD Mon YYYY HH24:MI') AS "createdAt",
+//         to_char(dr.created_at, 'DD Mon YYYY HH24:MI') AS "respondedAt"
+//       FROM donor_responses dr
+//       JOIN blood_requests br ON br.id = dr.request_id
+//       JOIN users u ON u.id = br.hospital_id
+//       WHERE dr.donor_id = $1
+//       ORDER BY dr.created_at DESC
+//       `,
+//       [req.user.id]
+//     );
+
+//     res.json({ responses: result.rows, donorLocation: donor });
+//   } catch (e) {
+//     res.status(500).json({ error: e.message });
+//   }
+// });
+
 router.get('/responses', async (req, res) => {
   try {
     const donorResult = await pool.query(
-      `SELECT location_lat, location_lng
+      `SELECT location_lat, location_lng, donation_count
        FROM users
        WHERE id = $1`,
       [req.user.id]
@@ -271,15 +308,18 @@ router.get('/responses', async (req, res) => {
     const result = await pool.query(
       `
       SELECT
-        br.id,
+        dr.id AS "responseId",
+        br.id AS "requestId",
         u.name AS "hospitalName",
         br.blood_type AS "bloodType",
         br.persons,
-        br.status,
+        br.status AS "requestStatus",
+        dr.status AS "responseStatus",
         u.location_lat AS "hospitalLat",
         u.location_lng AS "hospitalLng",
         to_char(br.created_at, 'DD Mon YYYY HH24:MI') AS "createdAt",
-        to_char(dr.created_at, 'DD Mon YYYY HH24:MI') AS "respondedAt"
+        to_char(dr.created_at, 'DD Mon YYYY HH24:MI') AS "respondedAt",
+        to_char(dr.last_updated_at, 'DD Mon YYYY HH24:MI') AS "lastUpdatedAt"
       FROM donor_responses dr
       JOIN blood_requests br ON br.id = dr.request_id
       JOIN users u ON u.id = br.hospital_id
@@ -289,11 +329,115 @@ router.get('/responses', async (req, res) => {
       [req.user.id]
     );
 
-    res.json({ responses: result.rows, donorLocation: donor });
+    res.json({ responses: result.rows, donor });
   } catch (e) {
     res.status(500).json({ error: e.message });
   }
 });
+
+
+// Mark a response as donated and increment donor's donation_count
+router.post('/responses/:id/donated', async (req, res) => {
+  const client = await pool.connect();
+  try {
+    const { id } = req.params;
+
+    await client.query('BEGIN');
+
+    // Ensure response belongs to this donor
+    const respResult = await client.query(
+      `SELECT id, donor_id, status
+       FROM donor_responses
+       WHERE id = $1 AND donor_id = $2`,
+      [id, req.user.id]
+    );
+    if (respResult.rows.length === 0) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({ error: 'Response not found' });
+    }
+
+    const resp = respResult.rows[0];
+    if (resp.status === 'Donated') {
+      await client.query('ROLLBACK');
+      return res.status(400).json({ error: 'Already marked as donated' });
+    }
+
+    // Update response row
+    const updateRes = await client.query(
+      `UPDATE donor_responses
+       SET status = 'Donated',
+           last_updated_at = CURRENT_TIMESTAMP
+       WHERE id = $1
+       RETURNING id, status,
+                 to_char(last_updated_at, 'DD Mon YYYY HH24:MI') AS "lastUpdatedAt"`,
+      [id]
+    );
+
+    // Increment donor donation_count
+    await client.query(
+      `UPDATE users
+       SET donation_count = donation_count + 1
+       WHERE id = $1`,
+      [req.user.id]
+    );
+
+    await client.query('COMMIT');
+
+    res.json({ response: updateRes.rows[0] });
+  } catch (e) {
+    await client.query('ROLLBACK');
+    res.status(500).json({ error: e.message });
+  } finally {
+    client.release();
+  }
+});
+
+// Delete/cancel a response (when donor could not donate)
+router.delete('/responses/:id', async (req, res) => {
+  const client = await pool.connect();
+  try {
+    const { id } = req.params;
+
+    await client.query('BEGIN');
+
+    const respResult = await client.query(
+      `SELECT id, donor_id, status
+       FROM donor_responses
+       WHERE id = $1 AND donor_id = $2`,
+      [id, req.user.id]
+    );
+    if (respResult.rows.length === 0) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({ error: 'Response not found' });
+    }
+
+    const resp = respResult.rows[0];
+
+    // Optional: if already Donated, you may disallow delete
+    if (resp.status === 'Donated') {
+      await client.query('ROLLBACK');
+      return res
+        .status(400)
+        .json({ error: 'Cannot delete a donated record' });
+    }
+
+    await client.query(
+      `DELETE FROM donor_responses
+       WHERE id = $1`,
+      [id]
+    );
+
+    await client.query('COMMIT');
+
+    res.status(204).send();
+  } catch (e) {
+    await client.query('ROLLBACK');
+    res.status(500).json({ error: e.message });
+  } finally {
+    client.release();
+  }
+});
+
 
 
 
