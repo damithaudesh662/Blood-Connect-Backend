@@ -439,6 +439,111 @@ router.delete('/responses/:id', async (req, res) => {
 });
 
 
+// GET /api/donor/profile
+router.get('/profile', async (req, res) => {
+  try {
+    const result = await pool.query(
+      `SELECT
+         id,
+         name,
+         email,
+         blood_group AS "bloodGroup",
+         role,
+         donation_count AS "donationCount",
+         location_lat AS "latitude",
+         location_lng AS "longitude"
+       FROM users
+       WHERE id = $1`,
+      [req.user.id]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'Donor not found' });
+    }
+
+    res.json({ profile: result.rows[0] });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// PATCH /api/donor/profile
+router.patch('/profile', async (req, res) => {
+  try {
+    const { email, location } = req.body;
+
+    if (!email && !location) {
+      return res.status(400).json({ error: 'Nothing to update' });
+    }
+
+    let locationLat = null;
+    let locationLng = null;
+
+    if (location) {
+      if (!Array.isArray(location) || location.length !== 2) {
+        return res
+          .status(400)
+          .json({ error: 'Location must be [lat, lng]' });
+      }
+      const [lat, lng] = location;
+      if (
+        typeof lat !== 'number' ||
+        typeof lng !== 'number' ||
+        !Number.isFinite(lat) ||
+        !Number.isFinite(lng)
+      ) {
+        return res
+          .status(400)
+          .json({ error: 'Location must be numeric [lat, lng]' });
+      }
+      locationLat = lat;
+      locationLng = lng;
+    }
+
+    const fields = [];
+    const values = [];
+    let idx = 1;
+
+    if (email) {
+      fields.push(`email = $${idx++}`);
+      values.push(email);
+    }
+    if (location) {
+      fields.push(`location_lat = $${idx++}`);
+      values.push(locationLat);
+      fields.push(`location_lng = $${idx++}`);
+      values.push(locationLng);
+    }
+
+    values.push(req.user.id);
+
+    const result = await pool.query(
+      `
+      UPDATE users
+      SET ${fields.join(', ')}
+      WHERE id = $${idx}
+      RETURNING
+        id,
+        name,
+        email,
+        blood_group AS "bloodGroup",
+        role,
+        donation_count AS "donationCount",
+        location_lat AS "latitude",
+        location_lng AS "longitude"
+      `,
+      values
+    );
+
+    res.json({ profile: result.rows[0] });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+
+
+
 
 
 export default router;
