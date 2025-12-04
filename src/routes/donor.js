@@ -63,15 +63,14 @@
 
 // export default router;
 
-
 // backend/src/routes/donor.js
-import express from 'express';
-import { pool } from '../db.js';
-import { authRequired, requireRole } from '../middleware/auth.js';
+import express from "express";
+import { pool } from "../db.js";
+import { authRequired, requireRole } from "../middleware/auth.js";
 
 const router = express.Router();
 
-router.use(authRequired, requireRole('donor'));
+router.use(authRequired, requireRole("donor"));
 
 // router.get('/requests/nearby', async (req, res) => {
 //   try {
@@ -103,7 +102,7 @@ router.use(authRequired, requireRole('donor'));
 // });
 
 // backend/src/routes/donor.js (GET /donor/requests/nearby)
-router.get('/requests/nearby', async (req, res) => {
+router.get("/requests/nearby", async (req, res) => {
   try {
     const donorResult = await pool.query(
       `SELECT location_lat, location_lng
@@ -113,7 +112,7 @@ router.get('/requests/nearby', async (req, res) => {
     );
 
     if (donorResult.rows.length === 0) {
-      return res.status(400).json({ error: 'Donor location not found' });
+      return res.status(400).json({ error: "Donor location not found" });
     }
 
     const { location_lat: dLat, location_lng: dLng } = donorResult.rows[0];
@@ -121,7 +120,7 @@ router.get('/requests/nearby', async (req, res) => {
     if (dLat == null || dLng == null) {
       return res
         .status(400)
-        .json({ error: 'Donor does not have location set' });
+        .json({ error: "Donor does not have location set" });
     }
 
     const result = await pool.query(
@@ -160,7 +159,7 @@ router.get('/requests/nearby', async (req, res) => {
 
     const withUrgency = result.rows.map((r) => ({
       ...r,
-      urgency: r.distanceKm <= 10 ? 'High' : 'Medium',
+      urgency: r.distanceKm <= 10 ? "High" : "Medium",
     }));
 
     res.json({ requests: withUrgency });
@@ -169,13 +168,12 @@ router.get('/requests/nearby', async (req, res) => {
   }
 });
 
-
-router.post('/requests/:id/respond', async (req, res) => {
+router.post("/requests/:id/respond", async (req, res) => {
   const client = await pool.connect();
   try {
     const { id } = req.params;
 
-    await client.query('BEGIN');
+    await client.query("BEGIN");
 
     // Get request with remaining capacity and ensure it's still Open
     const reqResult = await client.query(
@@ -187,10 +185,10 @@ router.post('/requests/:id/respond', async (req, res) => {
     );
 
     if (reqResult.rows.length === 0) {
-      await client.query('ROLLBACK');
+      await client.query("ROLLBACK");
       return res
         .status(404)
-        .json({ error: 'Request not found or already closed' });
+        .json({ error: "Request not found or already closed" });
     }
 
     const requestRow = reqResult.rows[0];
@@ -202,10 +200,10 @@ router.post('/requests/:id/respond', async (req, res) => {
       [id, req.user.id]
     );
     if (existing.rows.length > 0) {
-      await client.query('ROLLBACK');
+      await client.query("ROLLBACK");
       return res
         .status(400)
-        .json({ error: 'You have already responded to this request' });
+        .json({ error: "You have already responded to this request" });
     }
 
     // Insert donor response
@@ -247,11 +245,11 @@ router.post('/requests/:id/respond', async (req, res) => {
       );
     }
 
-    await client.query('COMMIT');
+    await client.query("COMMIT");
 
     res.status(201).json({ response: responseResult.rows[0] });
   } catch (e) {
-    await client.query('ROLLBACK');
+    await client.query("ROLLBACK");
     res.status(500).json({ error: e.message });
   } finally {
     client.release();
@@ -295,7 +293,7 @@ router.post('/requests/:id/respond', async (req, res) => {
 //   }
 // });
 
-router.get('/responses', async (req, res) => {
+router.get("/responses", async (req, res) => {
   try {
     const donorResult = await pool.query(
       `SELECT location_lat, location_lng, donation_count
@@ -318,7 +316,7 @@ router.get('/responses', async (req, res) => {
         u.location_lat AS "hospitalLat",
         u.location_lng AS "hospitalLng",
         to_char(br.created_at, 'DD Mon YYYY HH24:MI') AS "createdAt",
-        to_char(dr.created_at, 'DD Mon YYYY HH24:MI') AS "respondedAt",
+        to_char(dr.created_at, 'YYYY-MM-DD"T"HH24:MI:SS"Z"') AS "respondedAt",
         to_char(dr.last_updated_at, 'DD Mon YYYY HH24:MI') AS "lastUpdatedAt"
       FROM donor_responses dr
       JOIN blood_requests br ON br.id = dr.request_id
@@ -335,14 +333,13 @@ router.get('/responses', async (req, res) => {
   }
 });
 
-
 // Mark a response as donated and increment donor's donation_count
-router.post('/responses/:id/donated', async (req, res) => {
+router.post("/responses/:id/donated", async (req, res) => {
   const client = await pool.connect();
   try {
     const { id } = req.params;
 
-    await client.query('BEGIN');
+    await client.query("BEGIN");
 
     // Ensure response belongs to this donor
     const respResult = await client.query(
@@ -352,14 +349,14 @@ router.post('/responses/:id/donated', async (req, res) => {
       [id, req.user.id]
     );
     if (respResult.rows.length === 0) {
-      await client.query('ROLLBACK');
-      return res.status(404).json({ error: 'Response not found' });
+      await client.query("ROLLBACK");
+      return res.status(404).json({ error: "Response not found" });
     }
 
     const resp = respResult.rows[0];
-    if (resp.status === 'Donated') {
-      await client.query('ROLLBACK');
-      return res.status(400).json({ error: 'Already marked as donated' });
+    if (resp.status === "Donated") {
+      await client.query("ROLLBACK");
+      return res.status(400).json({ error: "Already marked as donated" });
     }
 
     // Update response row
@@ -381,11 +378,11 @@ router.post('/responses/:id/donated', async (req, res) => {
       [req.user.id]
     );
 
-    await client.query('COMMIT');
+    await client.query("COMMIT");
 
     res.json({ response: updateRes.rows[0] });
   } catch (e) {
-    await client.query('ROLLBACK');
+    await client.query("ROLLBACK");
     res.status(500).json({ error: e.message });
   } finally {
     client.release();
@@ -393,12 +390,12 @@ router.post('/responses/:id/donated', async (req, res) => {
 });
 
 // Delete/cancel a response (when donor could not donate)
-router.delete('/responses/:id', async (req, res) => {
+router.delete("/responses/:id", async (req, res) => {
   const client = await pool.connect();
   try {
     const { id } = req.params;
 
-    await client.query('BEGIN');
+    await client.query("BEGIN");
 
     const respResult = await client.query(
       `SELECT id, donor_id, status
@@ -407,18 +404,16 @@ router.delete('/responses/:id', async (req, res) => {
       [id, req.user.id]
     );
     if (respResult.rows.length === 0) {
-      await client.query('ROLLBACK');
-      return res.status(404).json({ error: 'Response not found' });
+      await client.query("ROLLBACK");
+      return res.status(404).json({ error: "Response not found" });
     }
 
     const resp = respResult.rows[0];
 
     // Optional: if already Donated, you may disallow delete
-    if (resp.status === 'Donated') {
-      await client.query('ROLLBACK');
-      return res
-        .status(400)
-        .json({ error: 'Cannot delete a donated record' });
+    if (resp.status === "Donated") {
+      await client.query("ROLLBACK");
+      return res.status(400).json({ error: "Cannot delete a donated record" });
     }
 
     await client.query(
@@ -427,20 +422,19 @@ router.delete('/responses/:id', async (req, res) => {
       [id]
     );
 
-    await client.query('COMMIT');
+    await client.query("COMMIT");
 
     res.status(204).send();
   } catch (e) {
-    await client.query('ROLLBACK');
+    await client.query("ROLLBACK");
     res.status(500).json({ error: e.message });
   } finally {
     client.release();
   }
 });
 
-
 // GET /api/donor/profile
-router.get('/profile', async (req, res) => {
+router.get("/profile", async (req, res) => {
   try {
     const result = await pool.query(
       `SELECT
@@ -458,7 +452,7 @@ router.get('/profile', async (req, res) => {
     );
 
     if (result.rows.length === 0) {
-      return res.status(404).json({ error: 'Donor not found' });
+      return res.status(404).json({ error: "Donor not found" });
     }
 
     res.json({ profile: result.rows[0] });
@@ -468,12 +462,12 @@ router.get('/profile', async (req, res) => {
 });
 
 // PATCH /api/donor/profile
-router.patch('/profile', async (req, res) => {
+router.patch("/profile", async (req, res) => {
   try {
     const { email, location } = req.body;
 
     if (!email && !location) {
-      return res.status(400).json({ error: 'Nothing to update' });
+      return res.status(400).json({ error: "Nothing to update" });
     }
 
     let locationLat = null;
@@ -481,20 +475,18 @@ router.patch('/profile', async (req, res) => {
 
     if (location) {
       if (!Array.isArray(location) || location.length !== 2) {
-        return res
-          .status(400)
-          .json({ error: 'Location must be [lat, lng]' });
+        return res.status(400).json({ error: "Location must be [lat, lng]" });
       }
       const [lat, lng] = location;
       if (
-        typeof lat !== 'number' ||
-        typeof lng !== 'number' ||
+        typeof lat !== "number" ||
+        typeof lng !== "number" ||
         !Number.isFinite(lat) ||
         !Number.isFinite(lng)
       ) {
         return res
           .status(400)
-          .json({ error: 'Location must be numeric [lat, lng]' });
+          .json({ error: "Location must be numeric [lat, lng]" });
       }
       locationLat = lat;
       locationLng = lng;
@@ -520,7 +512,7 @@ router.patch('/profile', async (req, res) => {
     const result = await pool.query(
       `
       UPDATE users
-      SET ${fields.join(', ')}
+      SET ${fields.join(", ")}
       WHERE id = $${idx}
       RETURNING
         id,
@@ -540,10 +532,5 @@ router.patch('/profile', async (req, res) => {
     res.status(500).json({ error: e.message });
   }
 });
-
-
-
-
-
 
 export default router;
