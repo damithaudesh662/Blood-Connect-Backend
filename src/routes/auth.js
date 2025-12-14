@@ -11,7 +11,8 @@ const router = express.Router();
 router.post("/register", async (req, res) => {
   try {
     console.log(req.body);
-    const { email, password, role, name, bloodGroup, location } = req.body;
+    // 1. EXTRACT fcmToken FROM REQUEST BODY
+    const { email, password, role, name, bloodGroup, location, fcmToken } = req.body;
 
     if (!email || !password || !role || !name) {
       return res.status(400).json({ error: "Missing fields" });
@@ -46,6 +47,7 @@ router.post("/register", async (req, res) => {
 
     console.log(locationLat, locationLng);
 
+    // 2. UPDATE INSERT QUERY TO INCLUDE fcm_token
     const result = await pool.query(
       `INSERT INTO users (
          email,
@@ -54,9 +56,10 @@ router.post("/register", async (req, res) => {
          name,
          blood_group,
          location_lat,
-         location_lng
+         location_lng,
+         fcm_token
        )
-       VALUES ($1,$2,$3,$4,$5,$6,$7)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
        RETURNING
          id,
          email,
@@ -65,7 +68,16 @@ router.post("/register", async (req, res) => {
          blood_group,
          location_lat AS "locationLat",
          location_lng AS "locationLng"`,
-      [email, hash, role, name, bloodGroup || null, locationLat, locationLng]
+      [
+        email, 
+        hash, 
+        role, 
+        name, 
+        bloodGroup || null, 
+        locationLat, 
+        locationLng,
+        fcmToken || null // <--- 3. PASS THE TOKEN HERE (as the 8th parameter)
+      ]
     );
 
     const user = result.rows[0];
