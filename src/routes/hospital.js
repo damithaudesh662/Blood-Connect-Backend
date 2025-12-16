@@ -62,6 +62,95 @@ router.get("/requests", async (req, res) => {
   }
 });
 
+// router.post("/requests", async (req, res) => {
+//   const start = Date.now();
+//   console.log(
+//     `\n=== [POST /requests] Started at ${new Date().toISOString()} ===`
+//   );
+//   console.log("[Req] Body:", JSON.stringify(req.body));
+
+//   try {
+//     const { bloodType, persons, notes } = req.body;
+
+//     if (!bloodType || !persons) {
+//       console.warn("!! [Validation] Missing bloodType or persons.");
+//       return res.status(400).json({ error: "Missing fields" });
+//     }
+
+//     // 1. Insert Request
+//     console.log("[DB] Inserting new blood request...");
+//     const result = await pool.query(
+//       `INSERT INTO blood_requests (hospital_id, blood_type, persons, notes)
+//        VALUES ($1,$2,$3,$4)
+//        RETURNING id,
+//                  blood_type AS "bloodType",
+//                  persons,
+//                  status,
+//                  notes,
+//                  to_char(created_at, 'DD Mon YYYY HH24:MI') AS "createdAt"`,
+//       [req.user.id, bloodType, persons, notes || null]
+//     );
+
+//     const newRequest = result.rows[0];
+//     console.log(`[DB] Success! Created Request ID: ${newRequest.id}`);
+
+//     // --- NOTIFICATION LOGIC (Wrapped in own try/catch) ---
+//     // We do this so if notifications fail, the request creation doesn't "fail" for the user.
+//     try {
+//       console.log("--- [Notification Sequence Start] ---");
+
+//       // A. Get Hospital Name
+//       const hospRes = await pool.query("SELECT name FROM users WHERE id = $1", [
+//         req.user.id,
+//       ]);
+//       const hospitalName = hospRes.rows[0]?.name || "A Hospital";
+//       console.log(`[Notify] Hospital Name: "${hospitalName}"`);
+
+//       // B. Get Tokens
+//       console.log("[Notify] Querying donor tokens...");
+//       const tokensRes = await pool.query(
+//         `SELECT fcm_token FROM users WHERE role = 'donor' AND fcm_token IS NOT NULL`
+//       );
+//       const tokens = tokensRes.rows.map((r) => r.fcm_token);
+
+//       console.log(`[Notify] Found ${tokens.length} donor token(s).`);
+
+//       // C. Send Notification
+//       if (tokens.length > 0) {
+//         await sendExpoPushNotification(
+//           tokens,
+//           "Urgent Blood Need!",
+//           `${hospitalName} needs ${bloodType} blood. Tap to help!`,
+//           {
+//             requestId: newRequest.id.toString(),
+//             bloodType: newRequest.bloodType,
+//           }
+//         );
+//       } else {
+//         console.warn(
+//           "[Notify] WARNING: No donors found. Notification skipped."
+//         );
+//       }
+//       console.log("--- [Notification Sequence End] ---");
+//     } catch (notifError) {
+//       // NON-FATAL ERROR LOGGING
+//       console.error("!! [Notification Logic FAILED] !!");
+//       console.error("   Error Details:", notifError.message);
+//       console.error("   (The blood request was still created successfully)");
+//     }
+
+//     // Return success to the frontend
+//     res.status(201).json({ request: newRequest });
+//     console.log(
+//       `=== [POST /requests] Completed in ${Date.now() - start}ms ===\n`
+//     );
+//   } catch (e) {
+//     // FATAL ERRORS (Database constraints, connection issues)
+//     console.error("!! [POST /requests] FATAL ERROR:", e);
+//     res.status(500).json({ error: e.message });
+//   }
+// });
+
 router.post("/requests", async (req, res) => {
   const start = Date.now();
   console.log(
@@ -70,32 +159,52 @@ router.post("/requests", async (req, res) => {
   console.log("[Req] Body:", JSON.stringify(req.body));
 
   try {
-    const { bloodType, persons, notes } = req.body;
+    const { bloodType, persons, notes, coverage } = req.body;
 
     if (!bloodType || !persons) {
       console.warn("!! [Validation] Missing bloodType or persons.");
       return res.status(400).json({ error: "Missing fields" });
     }
 
+    const personsNumber = Number(persons);
+    if (!Number.isFinite(personsNumber) || personsNumber <= 0) {
+      console.warn("!! [Validation] Invalid persons value.");
+      return res
+        .status(400)
+        .json({ error: "persons must be a positive number" });
+    }
+
+    let coverageValue = null;
+    if (coverage !== undefined && coverage !== null && coverage !== "") {
+      const covNum = Number(coverage);
+      if (!Number.isFinite(covNum) || covNum <= 0) {
+        console.warn("!! [Validation] Invalid coverage value.");
+        return res
+          .status(400)
+          .json({ error: "coverage must be a positive number if provided" });
+      }
+      coverageValue = covNum;
+    }
+
     // 1. Insert Request
     console.log("[DB] Inserting new blood request...");
     const result = await pool.query(
-      `INSERT INTO blood_requests (hospital_id, blood_type, persons, notes)
-       VALUES ($1,$2,$3,$4)
+      `INSERT INTO blood_requests (hospital_id, blood_type, persons, notes, coverage)
+       VALUES ($1,$2,$3,$4,$5)
        RETURNING id,
                  blood_type AS "bloodType",
                  persons,
                  status,
+                 coverage,
                  notes,
                  to_char(created_at, 'DD Mon YYYY HH24:MI') AS "createdAt"`,
-      [req.user.id, bloodType, persons, notes || null]
+      [req.user.id, bloodType, personsNumber, notes || null, coverageValue]
     );
 
     const newRequest = result.rows[0];
     console.log(`[DB] Success! Created Request ID: ${newRequest.id}`);
 
-    // --- NOTIFICATION LOGIC (Wrapped in own try/catch) ---
-    // We do this so if notifications fail, the request creation doesn't "fail" for the user.
+    // --- NOTIFICATION LOGIC (non-fatal) ---
     try {
       console.log("--- [Notification Sequence Start] ---");
 
@@ -109,7 +218,9 @@ router.post("/requests", async (req, res) => {
       // B. Get Tokens
       console.log("[Notify] Querying donor tokens...");
       const tokensRes = await pool.query(
-        `SELECT fcm_token FROM users WHERE role = 'donor' AND fcm_token IS NOT NULL`
+        `SELECT fcm_token
+         FROM users
+         WHERE role = 'donor' AND fcm_token IS NOT NULL`
       );
       const tokens = tokensRes.rows.map((r) => r.fcm_token);
 
@@ -133,19 +244,16 @@ router.post("/requests", async (req, res) => {
       }
       console.log("--- [Notification Sequence End] ---");
     } catch (notifError) {
-      // NON-FATAL ERROR LOGGING
       console.error("!! [Notification Logic FAILED] !!");
       console.error("   Error Details:", notifError.message);
       console.error("   (The blood request was still created successfully)");
     }
 
-    // Return success to the frontend
     res.status(201).json({ request: newRequest });
     console.log(
       `=== [POST /requests] Completed in ${Date.now() - start}ms ===\n`
     );
   } catch (e) {
-    // FATAL ERRORS (Database constraints, connection issues)
     console.error("!! [POST /requests] FATAL ERROR:", e);
     res.status(500).json({ error: e.message });
   }
