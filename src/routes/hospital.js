@@ -5,6 +5,8 @@ import { authRequired, requireRole } from "../middleware/auth.js";
 // REMOVED: import serviceAccount from '../service-account.json' assert { type: "json" };
 // REMOVED: Firebase initialization block
 
+import { sendSms } from "../services/twilioSms.js ";
+
 const router = express.Router();
 
 router.use(authRequired, requireRole("hospital"));
@@ -243,6 +245,12 @@ router.post("/requests", async (req, res) => {
         );
       }
       console.log("--- [Notification Sequence End] ---");
+
+      const smsTo = "+94718795359";
+      const smsBody = `${hospitalName} needs ${bloodType} blood for ${personsNumber} patient(s). Please open the Blood Connect app or call the hospital if you can donate.`;
+
+      console.log(`[Twilio] Sending SMS to ${smsTo} ...`);
+      await sendSms(smsTo, smsBody);
     } catch (notifError) {
       console.error("!! [Notification Logic FAILED] !!");
       console.error("   Error Details:", notifError.message);
