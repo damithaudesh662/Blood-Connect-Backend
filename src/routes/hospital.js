@@ -46,20 +46,28 @@ const sendExpoPushNotification = async (tokens, title, body, data) => {
 router.get("/requests", async (req, res) => {
   try {
     const result = await pool.query(
-      `SELECT id,
-              blood_type AS "bloodType",
-              persons,
-              status,
-              notes,
-              to_char(created_at, 'DD Mon YYYY HH24:MI') AS "createdAt"
-       FROM blood_requests
-       WHERE hospital_id = $1
-       ORDER BY created_at DESC`,
+      `SELECT 
+          br.id,
+          br.blood_type AS "bloodType",
+          br.persons,
+          br.status,
+          br.notes,
+          to_char(br.created_at, 'DD Mon YYYY HH24:MI') AS "createdAt",
+          -- Count donors who have simply 'Responded'
+          COUNT(CASE WHEN dr.status = 'Responded' THEN 1 END)::int AS "respondedCount",
+          -- Count donors who have successfully 'Donated'
+          COUNT(CASE WHEN dr.status = 'Donated' THEN 1 END)::int AS "donatedCount"
+       FROM blood_requests br
+       LEFT JOIN donor_responses dr ON br.id = dr.request_id
+       WHERE br.hospital_id = $1
+       GROUP BY br.id
+       ORDER BY br.created_at DESC`,
       [req.user.id]
     );
 
     res.json({ requests: result.rows });
   } catch (e) {
+    console.error(e);
     res.status(500).json({ error: e.message });
   }
 });
