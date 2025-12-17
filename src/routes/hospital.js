@@ -52,15 +52,15 @@ router.get("/requests", async (req, res) => {
           br.persons,
           br.status,
           br.notes,
+          u.name AS "hospitalName",  -- Fetching the name here
           to_char(br.created_at, 'DD Mon YYYY HH24:MI') AS "createdAt",
-          -- Count donors who have simply 'Responded'
           COUNT(CASE WHEN dr.status = 'Responded' THEN 1 END)::int AS "respondedCount",
-          -- Count donors who have successfully 'Donated'
           COUNT(CASE WHEN dr.status = 'Donated' THEN 1 END)::int AS "donatedCount"
        FROM blood_requests br
+       JOIN users u ON br.hospital_id = u.id
        LEFT JOIN donor_responses dr ON br.id = dr.request_id
        WHERE br.hospital_id = $1
-       GROUP BY br.id
+       GROUP BY br.id, u.name
        ORDER BY br.created_at DESC`,
       [req.user.id]
     );
