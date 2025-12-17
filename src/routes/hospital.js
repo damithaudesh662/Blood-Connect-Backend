@@ -246,7 +246,7 @@ router.post("/requests", async (req, res) => {
       }
       console.log("--- [Notification Sequence End] ---");
 
-      const smsTo = "+94718795359";
+      const smsTo = "+94786405331";
       const smsBody = `${hospitalName} needs ${bloodType} blood for ${personsNumber} patient(s). Please open the Blood Connect app or call the hospital if you can donate.`;
 
       console.log(`[Twilio] Sending SMS to ${smsTo} ...`);
