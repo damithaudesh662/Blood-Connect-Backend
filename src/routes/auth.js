@@ -11,7 +11,7 @@ const router = express.Router();
 router.post("/register", async (req, res) => {
   try {
     console.log(req.body);
-    // 1. EXTRACT fcmToken FROM REQUEST BODY
+    
     const { email, password, role, name, bloodGroup, location, fcmToken } = req.body;
 
     if (!email || !password || !role || !name) {
@@ -47,7 +47,7 @@ router.post("/register", async (req, res) => {
 
     console.log(locationLat, locationLng);
 
-    // 2. UPDATE INSERT QUERY TO INCLUDE fcm_token
+    
     const result = await pool.query(
       `INSERT INTO users (
          email,
@@ -76,7 +76,7 @@ router.post("/register", async (req, res) => {
         bloodGroup || null, 
         locationLat, 
         locationLng,
-        fcmToken || null // <--- 3. PASS THE TOKEN HERE (as the 8th parameter)
+        fcmToken || null 
       ]
     );
 
